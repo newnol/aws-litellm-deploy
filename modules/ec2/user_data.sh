@@ -79,7 +79,7 @@ services:
     container_name: litellm-proxy
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"
+      - "0.0.0.0:4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
     command:
@@ -89,9 +89,8 @@ services:
       - "4000"
       - "--host"
       - "0.0.0.0"
-    environment:
-      - DATABASE_URL=postgresql://\${DSQL_ENDPOINT}/litellm
-      - LITELLM_MASTER_KEY=MASTER_KEY_PLACEHOLDER
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s
@@ -112,9 +111,12 @@ services:
         condition: service_healthy
 COMPOSE_EOF
 
-# --- Replace placeholders with actual values ---
-sed -i "s|MASTER_KEY_PLACEHOLDER|LITELLM_MASTER_KEY_VALUE|g" /opt/litellm/docker-compose.yml
-sed -i "s|\$\{DSQL_ENDPOINT\}|DSQL_ENDPOINT_VALUE|g" /opt/litellm/docker-compose.yml
+# --- Create .env file ---
+cat > /opt/litellm/.env << 'ENV_EOF'
+DATABASE_URL=postgresql://${dsql_endpoint}/litellm
+LITELLM_MASTER_KEY=${litellm_master_key}
+ENV_EOF
+chmod 600 /opt/litellm/.env
 
 # --- Create litellm_config.yaml ---
 cat > /opt/litellm/litellm_config.yaml << 'CONFIG_EOF'

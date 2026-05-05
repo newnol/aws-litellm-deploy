@@ -16,13 +16,13 @@ resource "aws_security_group" "ec2" {
     description = "HTTP access"
   }
 
-  # LiteLLM direct access
+  # LiteLLM internal access (VPC only)
   ingress {
     from_port   = 4000
     to_port     = 4000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "LiteLLM proxy access"
+    cidr_blocks = ["10.0.0.0/16"]
+    description = "LiteLLM proxy access from VPC only"
   }
 
   # SSH

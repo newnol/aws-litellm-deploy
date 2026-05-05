@@ -12,7 +12,7 @@ services:
     container_name: litellm-proxy
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"
+      - "0.0.0.0:4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
     command:
@@ -22,9 +22,8 @@ services:
       - "4000"
       - "--host"
       - "0.0.0.0"
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-master}
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s
