@@ -1,24 +1,31 @@
-resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-${var.environment}-alb-sg"
-  description = "Security group for ALB"
+################################################################################
+# Security Groups — EC2 only (SSH + LiteLLM)
+################################################################################
+
+resource "aws_security_group" "ec2" {
+  name        = "${var.project_name}-${var.environment}-ec2-sg"
+  description = "Security group for EC2 instance"
   vpc_id      = var.vpc_id
 
+  # SSH
   ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # LiteLLM API
   ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
+    description = "LiteLLM API"
+    from_port   = 4000
+    to_port     = 4000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Outbound (all)
   egress {
     from_port   = 0
     to_port     = 0
@@ -27,62 +34,9 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-alb-sg"
+    Name        = "${var.project_name}-${var.environment}-ec2-sg"
     Project     = var.project_name
     Environment = var.environment
-  }
-}
-
-resource "aws_security_group" "ecs" {
-  name        = "${var.project_name}-${var.environment}-ecs-sg"
-  description = "Security group for ECS tasks"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    description     = "Container port from ALB"
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-ecs-sg"
-    Project     = var.project_name
-    Environment = var.environment
-  }
-}
-
-resource "aws_security_group" "rds" {
-  name        = "${var.project_name}-${var.environment}-rds-sg"
-  description = "Security group for RDS"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    description     = "PostgreSQL from ECS"
-    from_port       = var.db_port
-    to_port         = var.db_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-rds-sg"
-    Project     = var.project_name
-    Environment = var.environment
+    ManagedBy   = "terraform"
   }
 }
