@@ -1,9 +1,9 @@
-output "ecs_execution_role_arn" {
-  description = "ECS execution role ARN"
-  value       = aws_iam_role.ecs_execution.arn
+output "role_arn" {
+  description = "EC2 IAM role ARN"
+  value       = aws_iam_role.ec2.arn
 }
 
-output "ecs_task_role_arn" {
-  description = "ECS task role ARN"
-  value       = aws_iam_role.ecs_task.arn
+output "instance_profile_name" {
+  description = "EC2 instance profile name"
+  value       = aws_iam_instance_profile.ec2.name
 }
