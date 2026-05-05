@@ -2,7 +2,7 @@
 
 Production-ready AWS infrastructure for deploying **LiteLLM Proxy** using **Terraform IaC**.
 
-> **Architecture:** Cloudflare (DNS + SSL) → EC2 + Docker Compose → Aurora dSQL
+> **Architecture:** Cloudflare (DNS + SSL) → EC2 + Docker Compose (Nginx + LiteLLM) → Aurora dSQL
 
 ## Architecture
 
@@ -21,8 +21,9 @@ Production-ready AWS infrastructure for deploying **LiteLLM Proxy** using **Terr
 │  │  │  │  ┌──────────────────────────┐   │    │ │   │
 │  │  │  │  │  Docker Compose          │   │    │ │   │
 │  │  │  │  │  ┌──────────────────┐    │   │    │ │   │
-│  │  │  │  │  │  LiteLLM Proxy   │    │   │    │ │   │
-│  │  │  │  │  │  :4000           │    │   │    │ │   │
+│  │  │  │  │  │  Nginx (:80)     │    │   │    │ │   │
+│  │  │  │  │  │  ↕               │    │   │    │ │   │
+│  │  │  │  │  │  LiteLLM (:4000) │    │   │    │ │   │
 │  │  │  │  │  └──────────────────┘    │   │    │ │   │
 │  │  │  │  └──────────────────────────┘   │    │ │   │
 │  │  │  │  Elastic IP (static)            │    │ │   │
@@ -38,16 +39,18 @@ Production-ready AWS infrastructure for deploying **LiteLLM Proxy** using **Terr
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
 
-Internet → Cloudflare (DNS + SSL) → EC2 (Elastic IP) → LiteLLM → Aurora dSQL
+Internet → Cloudflare (DNS + SSL) → EC2 (Elastic IP) → Nginx (:80) → LiteLLM (:4000) → Aurora dSQL
 ```
 
 **Components:**
 - **VPC** — Simple VPC with public subnet, Internet Gateway (no NAT needed)
-- **EC2 t3.micro** — Free Tier eligible, running Docker Compose with LiteLLM
+- **EC2 t3.micro** — Free Tier eligible, running Docker Compose with Nginx + LiteLLM
+- **Nginx** — Reverse proxy with rate limiting, security headers, and load balancing ready
+- **LiteLLM** — LLM proxy on port 4000 (internal only, exposed via Nginx)
 - **Aurora dSQL** — Serverless PostgreSQL, scale to zero, pay per query
 - **Elastic IP** — Static public IP for consistent access
 - **IAM** — Least-privilege roles for EC2 (CloudWatch, SSM)
-- **Security Groups** — SSH + LiteLLM port access
+- **Security Groups** — SSH + HTTP (80) + HTTPS (443) access
 
 ## Project Structure
 
@@ -56,7 +59,9 @@ aws-litellm-deploy/
 ├── deploy.sh                    # Unified deploy script
 ├── Makefile                     # Make shortcuts
 ├── Dockerfile                   # Container image
-├── docker-compose.yml           # Docker Compose for LiteLLM
+├── docker-compose.yml           # Docker Compose for Nginx + LiteLLM
+├── nginx/
+│   └── nginx.conf               # Nginx reverse proxy config
 ├── modules/                     # Reusable Terraform modules
 │   ├── vpc/                     # VPC, public subnet, IGW
 │   ├── security-groups/         # EC2 security group
@@ -118,7 +123,10 @@ make ssh
 # View Docker logs
 make logs
 
-# Access LiteLLM
+# Access LiteLLM via Nginx (recommended)
+curl http://<ELASTIC_IP>/health/readiness
+
+# Direct LiteLLM access (port 4000, internal)
 curl http://<ELASTIC_IP>:4000/health/readiness
 ```
 
@@ -177,7 +185,8 @@ Database connection is automatically configured via dSQL.
 
 ## Security
 
-- **Security Group:** SSH (22) + LiteLLM (4000) access only
+- **Security Group:** SSH (22) + HTTP (80) + HTTPS (443) access
+- **Nginx:** Rate limiting (30 req/s), security headers, reverse proxy
 - **IAM:** Least-privilege roles for EC2 instance
 - **dSQL:** IAM-based authentication (no password in config)
 - **Network:** Public subnet with controlled access via security group
@@ -189,11 +198,12 @@ Database connection is automatically configured via dSQL.
 LiteLLM on AWS — Production Infrastructure (Terraform IaC)
 • Deployed LiteLLM proxy on AWS EC2 with Docker Compose using modular Terraform (5 modules)
 • Architected: VPC (public subnet), EC2 t3.micro, Aurora dSQL (serverless PostgreSQL)
+• Added Nginx reverse proxy with rate limiting, security headers, and load balancing ready
 • Implemented Elastic IP for static access, IAM least-privilege roles
 • Cloudflare DNS + SSL proxy for secure public endpoint
 • Automated: terraform init → plan → apply (single script)
 • Cost optimized: ~$0-5/month on AWS Free Tier
-• Tech: AWS (EC2, Aurora dSQL, VPC, IAM, Elastic IP), Terraform, Docker, PostgreSQL, Cloudflare
+• Tech: AWS (EC2, Aurora dSQL, VPC, IAM, Elastic IP), Terraform, Docker, Nginx, PostgreSQL, Cloudflare
 ```
 
 ## License
