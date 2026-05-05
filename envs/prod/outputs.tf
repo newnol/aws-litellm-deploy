@@ -3,67 +3,52 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
-output "alb_url" {
-  description = "Application URL via ALB"
-  value       = module.alb.alb_url
+output "ec2_public_ip" {
+  description = "EC2 Elastic IP (static public IP)"
+  value       = module.ec2.elastic_ip
 }
 
-output "alb_dns_name" {
-  description = "ALB DNS name (for Cloudflare CNAME)"
-  value       = module.alb.alb_dns_name
+output "ec2_instance_id" {
+  description = "EC2 instance ID"
+  value       = module.ec2.instance_id
 }
 
-output "ecr_repository_url" {
-  description = "ECR repository URL (push Docker images here)"
-  value       = module.ecr.repository_url
+output "dsql_endpoint" {
+  description = "Aurora dSQL cluster endpoint"
+  value       = module.dsql.cluster_endpoint
 }
 
-output "ecs_cluster_name" {
-  description = "ECS cluster name"
-  value       = module.ecs.cluster_name
+output "dsql_cluster_arn" {
+  description = "Aurora dSQL cluster ARN"
+  value       = module.dsql.cluster_arn
 }
 
-output "ecs_service_name" {
-  description = "ECS service name"
-  value       = module.ecs.service_name
+output "litellm_url" {
+  description = "LiteLLM Proxy URL"
+  value       = "http://${module.ec2.elastic_ip}:4000"
 }
 
-output "db_endpoint" {
-  description = "RDS endpoint"
-  value       = module.rds.db_endpoint
-}
-
-output "db_credentials_secret_arn" {
-  description = "Secrets Manager ARN for DB credentials"
-  value       = module.secrets.db_credentials_secret_arn
-}
-
-output "api_keys_secret_arn" {
-  description = "Secrets Manager ARN for API keys (fill in Console)"
-  value       = module.secrets.api_keys_secret_arn
-}
-
-output "cloudwatch_log_group" {
-  description = "CloudWatch log group for ECS"
-  value       = module.ecs.log_group_name
+output "ssh_command" {
+  description = "SSH command to connect to EC2"
+  value       = "ssh -i ${var.key_name}.pem ec2-user@${module.ec2.elastic_ip}"
 }
 
 output "deploy_commands" {
   description = "Quick deploy commands"
   value       = <<-EOT
-    
-    1. Push image to ECR:
-       aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${module.ecr.repository_url}
-       docker build -t ${module.ecr.repository_url}:latest .
-       docker push ${module.ecr.repository_url}:latest
+    1. SSH into instance:
+       ssh -i ${var.key_name}.pem ec2-user@${module.ec2.elastic_ip}
 
-    2. Force new deployment:
-       aws ecs update-service --cluster ${module.ecs.cluster_name} --service ${module.ecs.service_name} --force-new-deployment
+    2. Check LiteLLM status:
+       docker compose -f /opt/litellm/docker-compose.yml ps
 
     3. View logs:
-       aws logs tail ${module.ecs.log_group_name} --follow
+       docker compose -f /opt/litellm/docker-compose.yml logs -f
 
-    4. Set API key in Secrets Manager:
-       Go to AWS Console → Secrets Manager → ${module.secrets.api_keys_secret_arn}
+    4. Restart LiteLLM:
+       docker compose -f /opt/litellm/docker-compose.yml restart
+
+    5. Access LiteLLM:
+       http://${module.ec2.elastic_ip}:4000
   EOT
 }
