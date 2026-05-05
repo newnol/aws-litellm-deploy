@@ -1,25 +1,53 @@
 # 🚀 aws-litellm-deploy
 
-Production-ready AWS infrastructure for deploying containerized applications using **Terraform IaC**.
+Production-ready AWS infrastructure for deploying **LiteLLM Proxy** using **Terraform IaC**.
 
-> Pattern: Cloudflare (DNS + SSL) → ALB → ECS Fargate → RDS PostgreSQL
+> **Architecture:** Cloudflare (DNS + SSL) → EC2 + Docker Compose → Aurora dSQL
 
 ## Architecture
 
 ```
-Internet → Cloudflare (DNS + SSL) → ALB (HTTP:80) → ECS Fargate → RDS PostgreSQL
-                                                              ↕
-                                                     Secrets Manager
+┌─────────────────────────────────────────────────────┐
+│                    AWS Cloud                         │
+│                                                      │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  VPC (10.0.0.0/16)                           │   │
+│  │                                               │   │
+│  │  ┌─────────────────────────────────────────┐ │   │
+│  │  │  Public Subnet (10.0.1.0/24)            │ │   │
+│  │  │                                         │ │   │
+│  │  │  ┌─────────────────────────────────┐    │ │   │
+│  │  │  │  EC2 t3.micro                   │    │ │   │
+│  │  │  │  ┌──────────────────────────┐   │    │ │   │
+│  │  │  │  │  Docker Compose          │   │    │ │   │
+│  │  │  │  │  ┌──────────────────┐    │   │    │ │   │
+│  │  │  │  │  │  LiteLLM Proxy   │    │   │    │ │   │
+│  │  │  │  │  │  :4000           │    │   │    │ │   │
+│  │  │  │  │  └──────────────────┘    │   │    │ │   │
+│  │  │  │  └──────────────────────────┘   │    │ │   │
+│  │  │  │  Elastic IP (static)            │    │ │   │
+│  │  │  └─────────────────────────────────┘    │ │   │
+│  │  └─────────────────────────────────────────┘ │   │
+│  └──────────────────────────────────────────────┘   │
+│                                                      │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  Aurora dSQL (Serverless PostgreSQL)          │   │
+│  │  - Scale to zero                              │   │
+│  │  - Pay per query                              │   │
+│  │  - PostgreSQL wire protocol                   │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+
+Internet → Cloudflare (DNS + SSL) → EC2 (Elastic IP) → LiteLLM → Aurora dSQL
 ```
 
 **Components:**
-- **VPC** — Public/private subnets across 2 AZs, IGW, NAT Gateway
-- **ALB** — Application Load Balancer with health checks
-- **ECS Fargate** — Serverless container hosting
-- **RDS PostgreSQL** — Managed database (encrypted, auto-backup)
-- **ECR** — Docker image registry with lifecycle policy
-- **Secrets Manager** — DB credentials + API keys
-- **IAM** — Least-privilege roles for ECS tasks
+- **VPC** — Simple VPC with public subnet, Internet Gateway (no NAT needed)
+- **EC2 t3.micro** — Free Tier eligible, running Docker Compose with LiteLLM
+- **Aurora dSQL** — Serverless PostgreSQL, scale to zero, pay per query
+- **Elastic IP** — Static public IP for consistent access
+- **IAM** — Least-privilege roles for EC2 (CloudWatch, SSM)
+- **Security Groups** — SSH + LiteLLM port access
 
 ## Project Structure
 
@@ -28,23 +56,20 @@ aws-litellm-deploy/
 ├── deploy.sh                    # Unified deploy script
 ├── Makefile                     # Make shortcuts
 ├── Dockerfile                   # Container image
+├── docker-compose.yml           # Docker Compose for LiteLLM
 ├── modules/                     # Reusable Terraform modules
-│   ├── vpc/                     # VPC, subnets, IGW, NAT
-│   ├── security-groups/         # ALB, ECS, RDS security groups
-│   ├── ecr/                     # Docker registry
-│   ├── secrets/                 # Secrets Manager
-│   ├── iam/                     # Least-privilege IAM roles
-│   ├── rds/                     # PostgreSQL database
-│   ├── alb/                     # Application Load Balancer
-│   └── ecs/                     # Fargate cluster + service
+│   ├── vpc/                     # VPC, public subnet, IGW
+│   ├── security-groups/         # EC2 security group
+│   ├── ec2/                     # EC2 instance + Elastic IP
+│   ├── dsql/                    # Aurora dSQL cluster
+│   └── iam/                     # EC2 IAM roles
 └── envs/
-    ├── prod/                    # Production environment
-    │   ├── main.tf              # Module composition
-    │   ├── variables.tf
-    │   ├── outputs.tf
-    │   ├── provider.tf
-    │   └── terraform.tfvars.example
-    └── dev/                     # (optional) Development environment
+    └── prod/                    # Production environment
+        ├── main.tf              # Module composition
+        ├── variables.tf
+        ├── outputs.tf
+        ├── provider.tf
+        └── terraform.tfvars.example
 ```
 
 ## Quick Start
@@ -52,7 +77,7 @@ aws-litellm-deploy/
 ### Prerequisites
 - [Terraform](https://terraform.io/downloads) >= 1.5
 - [AWS CLI](https://aws.amazon.com/cli/) configured (`aws configure`)
-- [Docker](https://docs.docker.com/get-docker/) (for building images)
+- SSH key pair in AWS (for EC2 access)
 
 ### 1. Setup
 
@@ -81,20 +106,20 @@ make apply
 make deploy
 ```
 
-### 3. Deploy Application
+### 3. Verify & Use
 
 ```bash
-# Build and push Docker image
-make build
-
-# Force new ECS deployment
-make force-deploy
-
 # Check status
 make status
 
-# View logs
+# SSH into instance
+make ssh
+
+# View Docker logs
 make logs
+
+# Access LiteLLM
+curl http://<ELASTIC_IP>:4000/health/readiness
 ```
 
 ### 4. Destroy
@@ -106,64 +131,69 @@ make destroy
 
 ## Available Commands
 
-| Command | Description |
-|---------|-------------|
-| `make init` | Initialize Terraform |
-| `make plan` | Plan changes |
-| `make apply` | Apply saved plan |
-| `make deploy` | Full deploy |
-| `make build` | Build & push Docker image |
-| `make force-deploy` | Force new ECS deployment |
-| `make logs` | Tail CloudWatch logs |
-| `make status` | Show deployment status |
-| `make destroy` | Destroy all resources |
-| `make fmt` | Format Terraform files |
-| `make validate` | Validate config |
+- `make init` — Initialize Terraform
+- `make plan` — Plan changes
+- `make apply` — Apply saved plan
+- `make deploy` — Full deploy (init → plan → apply)
+- `make status` — Show deployment status
+- `make logs` — Tail Docker logs via SSH
+- `make ssh` — SSH into EC2 instance
+- `make destroy` — Destroy all resources
+- `make fmt` — Format Terraform files
+- `make validate` — Validate config
 
 ## Cost Estimate
 
-| Component | Monthly Cost |
-|-----------|-------------|
-| ECS Fargate (0.5 vCPU, 1GB) | ~$15 |
-| RDS db.t3.micro | Free tier (750h) |
-| ALB | Free tier (750h) |
-| NAT Gateway | ~$32 |
-| ECR (storage) | ~$0.10 |
-| Secrets Manager | ~$0.40 |
-| **Total** | **~$47/month** |
+- **EC2 t3.micro** — Free tier (750h/month for 12 months)
+- **Aurora dSQL** — Pay per query, scale to zero (~$0-5/month)
+- **Elastic IP** — Free when attached to running instance
+- **VPC** — Free (no NAT Gateway needed)
+- **Total** — **~$0-5/month** (Free Tier eligible)
 
-**Save $32/month:** Set `enable_nat_gateway = false` in terraform.tfvars (ECS tasks lose internet access).
+After Free Tier expires:
+- **EC2 t3.micro** — ~$8/month
+- **Aurora dSQL** — ~$0-5/month
+- **Total** — **~$8-13/month**
 
 ## Cloudflare Integration
 
-1. Add CNAME record in Cloudflare:
+1. Add **A record** in Cloudflare:
    - **Name:** `litellm` (or your subdomain)
-   - **Target:** ALB DNS name (from `terraform output alb_dns_name`)
+   - **Target:** Elastic IP (from `terraform output elastic_ip`)
    - **Proxy:** ON (orange cloud)
 
 2. Cloudflare settings:
    - SSL mode: **Full** (not Flexible)
    - Always Use HTTPS: **ON**
 
+## Environment Variables
+
+The EC2 instance uses these environment variables (set in `terraform.tfvars`):
+
+- `LITELLM_MASTER_KEY` — Master API key for LiteLLM
+- `LITELLM_SALT_KEY` — Salt key for encryption
+
+Database connection is automatically configured via dSQL.
+
 ## Security
 
-- **Security Groups:** ALB → ECS → RDS (layered access)
-- **IAM:** Least-privilege roles for ECS tasks
-- **Secrets:** Auto-generated DB password, stored in Secrets Manager
-- **Encryption:** RDS storage encrypted at rest
-- **Network:** Private subnets for ECS + RDS, no public access
+- **Security Group:** SSH (22) + LiteLLM (4000) access only
+- **IAM:** Least-privilege roles for EC2 instance
+- **dSQL:** IAM-based authentication (no password in config)
+- **Network:** Public subnet with controlled access via security group
+- **Elastic IP:** Consistent IP for firewall rules
 
 ## CV Description
 
 ```
 LiteLLM on AWS — Production Infrastructure (Terraform IaC)
-• Deployed LiteLLM proxy on AWS ECS Fargate with modular Terraform (8 modules)
-• Architected: VPC (public/private subnets), ALB, ECS Fargate, RDS PostgreSQL
-• Implemented least-privilege IAM, Secrets Manager, VPC security groups
+• Deployed LiteLLM proxy on AWS EC2 with Docker Compose using modular Terraform (5 modules)
+• Architected: VPC (public subnet), EC2 t3.micro, Aurora dSQL (serverless PostgreSQL)
+• Implemented Elastic IP for static access, IAM least-privilege roles
 • Cloudflare DNS + SSL proxy for secure public endpoint
-• Automated: build → push ECR → deploy ECS (single script)
-• Tech: AWS (ECS, RDS, ALB, ECR, IAM, VPC, Secrets Manager, CloudWatch),
-  Terraform, Docker, PostgreSQL, Cloudflare
+• Automated: terraform init → plan → apply (single script)
+• Cost optimized: ~$0-5/month on AWS Free Tier
+• Tech: AWS (EC2, Aurora dSQL, VPC, IAM, Elastic IP), Terraform, Docker, PostgreSQL, Cloudflare
 ```
 
 ## License
