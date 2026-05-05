@@ -1,0 +1,54 @@
+# ============================================================
+# Docker Compose for LiteLLM Proxy
+# Designed for EC2 deployment with Aurora dSQL
+# ============================================================
+version: "3.8"
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm-proxy
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      # LiteLLM configuration
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - LITELLM_SALT_KEY=${LITELLM_SALT_KEY}
+
+      # Database connection (Aurora dSQL)
+      - DATABASE_URL=postgresql://${DSQL_USER}:${DSQL_PASSWORD}@${DSQL_HOST}:${DSQL_PORT}/${DSQL_DB}
+
+      # LiteLLM settings
+      - STORE_MODEL_IN_DB=true
+      - DISABLE_SCHEMA_UPDATE=false
+
+      # Logging
+      - LITELLM_LOG=INFO
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+      - "--host"
+      - "0.0.0.0"
+      - "--detailed_debug"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/readiness')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
