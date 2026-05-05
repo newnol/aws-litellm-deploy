@@ -52,8 +52,8 @@ locals {
     swapon /swapfile
     echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
 
-    # Create app directory
-    mkdir -p /opt/litellm
+    # Create app directory and nginx directory
+    mkdir -p /opt/litellm/nginx
     cd /opt/litellm
 
     # Create .env file for Docker Compose
@@ -75,17 +75,102 @@ locals {
       database_url: os.environ/DATABASE_URL
     CONFIGEOF
 
+    # Create nginx.conf
+    cat > nginx/nginx.conf << 'NGINXEOF'
+    upstream litellm_backend {
+        server litellm:4000;
+    }
+
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
+
+    server {
+        listen 80;
+        server_name _;
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "no-referrer-when-downgrade" always;
+
+        gzip on;
+        gzip_types text/plain application/json application/javascript text/css;
+        gzip_min_length 1000;
+
+        location /nginx-health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            limit_req zone=api_limit burst=50 nodelay;
+
+            proxy_pass http://litellm_backend;
+            proxy_http_version 1.1;
+
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 120s;
+            proxy_read_timeout 120s;
+
+            proxy_buffering on;
+            proxy_buffer_size 4k;
+            proxy_buffers 8 4k;
+        }
+
+        access_log /var/log/nginx/litellm_access.log;
+        error_log /var/log/nginx/litellm_error.log;
+    }
+    NGINXEOF
+
     # Create docker-compose.yml (inline from template)
     cat > docker-compose.yml << 'COMPOSEEOF'
     version: "3.8"
 
     services:
+      nginx:
+        image: nginx:alpine
+        container_name: nginx-proxy
+        restart: unless-stopped
+        ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+          - nginx_logs:/var/log/nginx
+        depends_on:
+          - litellm
+        healthcheck:
+          test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/nginx-health"]
+          interval: 30s
+          timeout: 10s
+          start_period: 10s
+          retries: 3
+        deploy:
+          resources:
+            limits:
+              memory: 128M
+            reservations:
+              memory: 64M
+        logging:
+          driver: json-file
+          options:
+            max-size: "10m"
+            max-file: "3"
+
       litellm:
         image: ghcr.io/berriai/litellm:main-latest
         container_name: litellm-proxy
         restart: unless-stopped
-        ports:
-          - "4000:4000"
+        expose:
+          - "4000"
         environment:
           - LITELLM_MASTER_KEY=$${LITELLM_MASTER_KEY}
           - LITELLM_SALT_KEY=$${LITELLM_SALT_KEY}
@@ -118,6 +203,9 @@ locals {
           options:
             max-size: "10m"
             max-file: "3"
+
+    volumes:
+      nginx_logs:
     COMPOSEEOF
 
     # Pull image and start
