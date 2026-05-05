@@ -7,6 +7,8 @@ tfplan
 .terraform.lock.hcl
 
 # Environment
+.env
+!envs/prod/.env.example
 terraform.tfvars
 !terraform.tfvars.example
 
