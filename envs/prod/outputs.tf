@@ -28,6 +28,11 @@ output "litellm_url" {
   value       = "http://${module.ec2.elastic_ip}:4000"
 }
 
+output "nginx_url" {
+  description = "LiteLLM URL via Nginx (port 80)"
+  value       = "http://${module.ec2.elastic_ip}"
+}
+
 output "ssh_command" {
   description = "SSH command to connect to EC2"
   value       = "ssh -i ${var.key_name}.pem ec2-user@${module.ec2.elastic_ip}"
@@ -50,5 +55,8 @@ output "deploy_commands" {
 
     5. Access LiteLLM:
        http://${module.ec2.elastic_ip}:4000
+
+    6. Access via Nginx (recommended):
+       http://${module.ec2.elastic_ip}
   EOT
 }
