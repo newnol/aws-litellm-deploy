@@ -9,18 +9,6 @@ variable "environment" {
 }
 
 variable "vpc_id" {
-  description = "VPC ID to create security groups in"
+  description = "VPC ID"
   type        = string
-}
-
-variable "container_port" {
-  description = "Container port for ECS tasks"
-  type        = number
-  default     = 4000
-}
-
-variable "db_port" {
-  description = "Database port"
-  type        = number
-  default     = 5432
 }
