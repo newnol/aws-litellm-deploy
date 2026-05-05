@@ -1,49 +1,34 @@
-variable "project_name" {
-  description = "Project name for resource naming"
-  type        = string
-  default     = "litellm"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "prod"
-}
+# =============================================================================
+# Variables
+# =============================================================================
 
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "ap-southeast-1"
+  default     = "us-east-1"
 }
 
-# VPC
-variable "vpc_cidr" {
-  description = "VPC CIDR block"
+variable "project_name" {
+  description = "Project name (used as prefix for resources)"
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "litellm"
 }
 
-# EC2
-variable "instance_type" {
-  description = "EC2 instance type (t3.micro for Free Tier)"
+variable "db_name" {
+  description = "Aurora dSQL database name"
   type        = string
-  default     = "t3.micro"
+  default     = "litellm"
 }
 
-variable "key_name" {
-  description = "SSH key pair name for EC2 access"
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to SSH into the EC2 instance"
   type        = string
+  default     = "0.0.0.0/0"
 }
 
-# LiteLLM
 variable "litellm_master_key" {
-  description = "LiteLLM master API key"
+  description = "Master key for LiteLLM proxy"
   type        = string
-  sensitive   = true
-}
-
-variable "litellm_salt_key" {
-  description = "LiteLLM salt key for hashing"
-  type        = string
+  default     = "sk-litellm-master"
   sensitive   = true
 }

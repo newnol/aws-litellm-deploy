@@ -1,9 +1,8 @@
-variable "project_name" {
-  description = "Project name for resource naming"
-  type        = string
-}
+# =============================================================================
+# IAM - Variables
+# =============================================================================
 
-variable "environment" {
-  description = "Environment name"
+variable "project_name" {
+  description = "Project name (used as prefix for resources)"
   type        = string
 }

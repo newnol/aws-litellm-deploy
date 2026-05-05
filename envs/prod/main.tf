@@ -1,67 +1,56 @@
-locals {
-  common_tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "terraform"
-  }
-}
+# =============================================================================
+# Main - EC2 + Nginx + LiteLLM + Aurora dSQL Architecture
+# =============================================================================
 
-# ============================================================
-# VPC — Public subnet only (no NAT needed for single EC2)
-# ============================================================
+# --- VPC ---
 module "vpc" {
   source = "../../modules/vpc"
 
   project_name = var.project_name
-  environment  = var.environment
-  vpc_cidr     = var.vpc_cidr
 }
 
-# ============================================================
-# Security Groups — EC2 only
-# ============================================================
+# --- Security Groups ---
 module "security_groups" {
   source = "../../modules/security-groups"
 
-  project_name = var.project_name
-  environment  = var.environment
-  vpc_id       = module.vpc.vpc_id
+  project_name    = var.project_name
+  vpc_id          = module.vpc.vpc_id
+  allowed_ssh_cidr = var.allowed_ssh_cidr
 }
 
-# ============================================================
-# IAM — EC2 instance role
-# ============================================================
+# --- IAM ---
 module "iam" {
   source = "../../modules/iam"
 
   project_name = var.project_name
-  environment  = var.environment
 }
 
-# ============================================================
-# Aurora dSQL — Serverless PostgreSQL (scale to zero)
-# ============================================================
+# --- Aurora dSQL ---
 module "dsql" {
   source = "../../modules/dsql"
 
   project_name = var.project_name
-  environment  = var.environment
+  db_name      = var.db_name
 }
 
-# ============================================================
-# EC2 — t3.micro with Docker Compose + Elastic IP
-# ============================================================
+# --- EC2 ---
 module "ec2" {
   source = "../../modules/ec2"
 
-  project_name       = var.project_name
-  environment        = var.environment
-  instance_type      = var.instance_type
-  subnet_id          = module.vpc.public_subnet_ids[0]
-  sg_id              = module.security_groups.ec2_sg_id
-  key_name           = var.key_name
-  instance_profile   = module.iam.instance_profile_name
-  litellm_master_key = var.litellm_master_key
-  litellm_salt_key   = var.litellm_salt_key
-  dsql_endpoint      = module.dsql.cluster_endpoint
+  project_name         = var.project_name
+  subnet_id            = module.vpc.public_subnet_ids[0]
+  security_group_ids   = [module.security_groups.ec2_security_group_id]
+  instance_profile_name = module.iam.instance_profile_name
+  dsql_endpoint        = module.dsql.cluster_endpoint
+  litellm_master_key   = var.litellm_master_key
+}
+
+# --- Elastic IP ---
+resource "aws_eip" "this" {
+  instance = module.ec2.instance_id
+  domain   = "vpc"
+
+  tags = {
+    Name = "${var.project_name}-eip"
+  }
 }

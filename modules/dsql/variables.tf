@@ -1,18 +1,14 @@
-################################################################################
-# Aurora dSQL Module Variables
-################################################################################
+# =============================================================================
+# Aurora dSQL - Variables
+# =============================================================================
 
 variable "project_name" {
-  description = "Name of the project"
+  description = "Project name (used as prefix for resources)"
   type        = string
 }
 
-variable "environment" {
-  description = "Environment name"
+variable "db_name" {
+  description = "Aurora dSQL database name"
   type        = string
-}
-
-variable "cluster_identifier" {
-  description = "Cluster identifier for Aurora dSQL"
-  type        = string
+  default     = "litellm"
 }

@@ -1,21 +1,10 @@
-################################################################################
-# EC2 Module Variables
-################################################################################
+# =============================================================================
+# EC2 - Variables
+# =============================================================================
 
 variable "project_name" {
-  description = "Name of the project"
+  description = "Project name (used as prefix for resources)"
   type        = string
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-}
-
-variable "instance_type" {
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.micro"
 }
 
 variable "subnet_id" {
@@ -23,34 +12,23 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "sg_id" {
-  description = "Security group ID for the EC2 instance"
-  type        = string
+variable "security_group_ids" {
+  description = "Security group IDs for the EC2 instance"
+  type        = list(string)
 }
 
-variable "key_name" {
-  description = "Name of the SSH key pair"
-  type        = string
-}
-
-variable "instance_profile" {
+variable "instance_profile_name" {
   description = "IAM instance profile name"
   type        = string
-}
-
-variable "litellm_master_key" {
-  description = "LiteLLM master API key"
-  type        = string
-  sensitive   = true
-}
-
-variable "litellm_salt_key" {
-  description = "LiteLLM salt key for encryption"
-  type        = string
-  sensitive   = true
 }
 
 variable "dsql_endpoint" {
   description = "Aurora dSQL cluster endpoint"
   type        = string
+}
+
+variable "litellm_master_key" {
+  description = "Master key for LiteLLM proxy"
+  type        = string
+  sensitive   = true
 }

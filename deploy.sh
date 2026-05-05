@@ -1,209 +1,150 @@
 #!/usr/bin/env bash
-# ============================================================
-# deploy.sh — Unified deploy script for LiteLLM on AWS
-# Architecture: EC2 t3.micro + Aurora dSQL + Docker Compose
-# Usage: ./deploy.sh <environment> <command>
-# Example: ./deploy.sh prod plan
-# ============================================================
+# =============================================================================
+# LiteLLM Proxy - Deploy Script
+# =============================================================================
+# Convenience wrapper for Terraform commands and EC2 management.
+# Usage: ./deploy.sh <command>
+# =============================================================================
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV="${1:-}"
-CMD="${2:-help}"
+ENV_DIR="${SCRIPT_DIR}/envs/prod"
 
-# Colors
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log() { echo -e "${GREEN}[✓]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-error() { echo -e "${RED}[✗]${NC} $*" >&2; }
-info() { echo -e "${BLUE}[i]${NC} $*"; }
+log_info()  { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
-# Validate environment
-validate_env() {
-  if [[ -z "$ENV" ]]; then
-    error "Environment required. Usage: ./deploy.sh <env> <command>"
-    echo " Environments: dev, staging, prod"
-    exit 1
-  fi
-  local env_dir="${SCRIPT_DIR}/envs/${ENV}"
-  if [[ ! -d "$env_dir" ]]; then
-    error "Environment '${ENV}' not found at ${env_dir}"
-    exit 1
-  fi
+# Get elastic IP from Terraform output
+get_elastic_ip() {
+    cd "${ENV_DIR}"
+    terraform output -raw elastic_ip 2>/dev/null
 }
 
-# Run terraform command in the correct directory
-tf() {
-  cd "${SCRIPT_DIR}/envs/${ENV}"
-  terraform "$@"
+# Get SSH key path
+get_ssh_key() {
+    cd "${ENV_DIR}"
+    terraform output -raw ssh_command 2>/dev/null | grep -oP '(?<=-i )[^ ]+' || echo "~/.ssh/litellm.pem"
 }
 
-case "$CMD" in
-  init)
-    validate_env
-    info "Initializing Terraform for ${ENV}..."
-    tf init -upgrade
-    log "Terraform initialized"
-    ;;
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 
-  plan)
-    validate_env
-    info "Planning changes for ${ENV}..."
-    tf plan -out=tfplan
-    log "Plan saved to tfplan"
-    ;;
+cmd_init() {
+    log_info "Initializing Terraform..."
+    cd "${ENV_DIR}"
+    terraform init
+    log_ok "Terraform initialized."
+}
 
-  apply)
-    validate_env
-    if [[ ! -f "${SCRIPT_DIR}/envs/${ENV}/tfplan" ]]; then
-      error "No tfplan found. Run './deploy.sh ${ENV} plan' first"
-      exit 1
-    fi
-    warn "Applying changes to ${ENV}..."
-    tf apply tfplan
-    log "Changes applied successfully"
-    ;;
+cmd_plan() {
+    log_info "Creating Terraform plan..."
+    cd "${ENV_DIR}"
+    terraform plan -out=tfplan
+    log_ok "Plan saved to tfplan."
+}
 
-  deploy)
-    validate_env
-    info "Full deploy to ${ENV}: init → plan → apply"
-    tf init -upgrade
-    tf plan -out=tfplan
-    warn "Review the plan above. Apply? (y/N)"
-    read -r confirm
-    if [[ "$confirm" =~ ^[Yy]$ ]]; then
-      tf apply tfplan
-      log "Deploy complete!"
-      echo ""
-      info "=== Connection Info ==="
-      tf output
+cmd_apply() {
+    log_info "Applying Terraform plan..."
+    cd "${ENV_DIR}"
+    if [[ -f tfplan ]]; then
+        terraform apply tfplan
     else
-      warn "Deploy cancelled"
+        terraform apply
     fi
-    ;;
+    log_ok "Infrastructure deployed!"
 
-  status)
-    validate_env
-    info "Status for ${ENV}:"
-    cd "${SCRIPT_DIR}/envs/${ENV}"
+    # Show connection info
     echo ""
-    echo "=== Terraform Outputs ==="
-    terraform output
+    log_info "Connection info:"
+    echo "  Elastic IP: $(get_elastic_ip)"
+    echo "  SSH:        $(terraform output -raw ssh_command 2>/dev/null || echo 'N/A')"
+    echo "  LiteLLM:    http://$(get_elastic_ip):4000"
     echo ""
-    ELASTIC_IP=$(terraform output -raw elastic_ip 2>/dev/null || echo "")
-    if [[ -n "$ELASTIC_IP" ]]; then
-      echo "=== EC2 Instance ==="
-      echo "Public IP: ${ELASTIC_IP}"
-      echo "LiteLLM: http://${ELASTIC_IP}:4000"
-      echo ""
-      echo "=== Docker Status (via SSH) ==="
-      KEY_NAME=$(terraform output -raw key_name 2>/dev/null || echo "")
-      if [[ -n "$KEY_NAME" ]]; then
-        ssh -o StrictHostKeyChecking=no -i "${KEY_NAME}.pem" ec2-user@"$ELASTIC_IP" \
-          "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null || \
-          warn "SSH not available. Check key pair and security group."
-      fi
-    fi
-    ;;
+}
 
-  logs)
-    validate_env
-    cd "${SCRIPT_DIR}/envs/${ENV}"
-    ELASTIC_IP=$(terraform output -raw elastic_ip 2>/dev/null || echo "")
-    KEY_NAME=$(terraform output -raw key_name 2>/dev/null || echo "")
-    if [[ -z "$ELASTIC_IP" ]]; then
-      error "No Elastic IP found. Deploy first."
-      exit 1
-    fi
-    info "Tailing Docker logs on ${ELASTIC_IP}..."
-    ssh -o StrictHostKeyChecking=no -i "${KEY_NAME}.pem" ec2-user@"$ELASTIC_IP" \
-      "docker logs -f litellm-proxy" 2>/dev/null || \
-      error "SSH connection failed. Check key pair and security group."
-    ;;
-
-  ssh)
-    validate_env
-    cd "${SCRIPT_DIR}/envs/${ENV}"
-    ELASTIC_IP=$(terraform output -raw elastic_ip 2>/dev/null || echo "")
-    KEY_NAME=$(terraform output -raw key_name 2>/dev/null || echo "")
-    if [[ -z "$ELASTIC_IP" ]]; then
-      error "No Elastic IP found. Deploy first."
-      exit 1
-    fi
-    info "SSH into ${ELASTIC_IP}..."
-    ssh -o StrictHostKeyChecking=no -i "${KEY_NAME}.pem" ec2-user@"$ELASTIC_IP"
-    ;;
-
-  destroy)
-    validate_env
-    warn "⚠️  This will DESTROY all resources in ${ENV}!"
-    warn "Type the environment name '${ENV}' to confirm:"
-    read -r confirm
-    if [[ "$confirm" == "$ENV" ]]; then
-      info "Planning destroy..."
-      tf plan -destroy -out=destroy.tfplan
-      warn "Final confirmation. Apply destroy plan? (y/N)"
-      read -r final
-      if [[ "$final" =~ ^[Yy]$ ]]; then
-        tf apply destroy.tfplan
-        log "All resources destroyed"
-      else
-        warn "Destroy cancelled"
-      fi
+cmd_destroy() {
+    log_warn "This will destroy ALL infrastructure!"
+    read -p "Are you sure? (yes/no): " confirm
+    if [[ "$confirm" == "yes" ]]; then
+        cd "${ENV_DIR}"
+        terraform destroy
+        log_ok "Infrastructure destroyed."
     else
-      error "Confirmation failed. Destroy cancelled."
+        log_info "Aborted."
     fi
-    ;;
+}
 
-  output)
-    validate_env
-    cd "${SCRIPT_DIR}/envs/${ENV}"
-    terraform output
-    ;;
+cmd_ssh() {
+    local ip
+    ip=$(get_elastic_ip)
+    local key
+    key=$(get_ssh_key)
+    log_info "Connecting to ${ip}..."
+    ssh -i "${key}" ec2-user@"${ip}"
+}
 
-  fmt)
-    info "Formatting Terraform files..."
-    terraform fmt -recursive "$SCRIPT_DIR"
-    log "Files formatted"
-    ;;
+cmd_status() {
+    local ip
+    ip=$(get_elastic_ip)
+    log_info "Checking status..."
+    echo "  Elastic IP: ${ip}"
+    echo "  LiteLLM:    http://${ip}:4000"
+    echo "  Health:     $(curl -s -o /dev/null -w '%{http_code}' "http://${ip}:4000/health" 2>/dev/null || echo 'unreachable')"
+}
 
-  validate)
-    validate_env
-    info "Validating Terraform config for ${ENV}..."
-    tf validate
-    log "Config is valid"
-    ;;
+cmd_logs() {
+    local ip
+    ip=$(get_elastic_ip)
+    local key
+    key=$(get_ssh_key)
+    log_info "Fetching logs from EC2..."
+    ssh -i "${key}" ec2-user@"${ip}" 'cd /opt/litellm && docker compose logs --tail=50'
+}
 
-  help|*)
-    echo ""
-    echo "Usage: ./deploy.sh <environment> <command>"
-    echo ""
-    echo "Environments: dev, staging, prod"
-    echo ""
-    echo "Commands:"
-    echo "  init        Initialize Terraform"
-    echo "  plan        Plan changes (save to tfplan)"
-    echo "  apply       Apply saved plan"
-    echo "  deploy      Full deploy: init → plan → apply"
-    echo "  status      Show deployment status"
-    echo "  logs        Tail Docker logs via SSH"
-    echo "  ssh         SSH into EC2 instance"
-    echo "  destroy     Destroy all resources (with confirmation)"
-    echo "  output      Show Terraform outputs"
-    echo "  fmt         Format Terraform files"
-    echo "  validate    Validate Terraform config"
-    echo ""
-    echo "Examples:"
-    echo "  ./deploy.sh prod plan"
-    echo "  ./deploy.sh prod deploy"
-    echo "  ./deploy.sh prod status"
-    echo "  ./deploy.sh prod logs"
-    echo "  ./deploy.sh prod ssh"
-    echo ""
-    ;;
+cmd_restart() {
+    local ip
+    ip=$(get_elastic_ip)
+    local key
+    key=$(get_ssh_key)
+    log_info "Restarting LiteLLM on EC2..."
+    ssh -i "${key}" ec2-user@"${ip}" 'cd /opt/litellm && docker compose restart'
+    log_ok "Restarted."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+case "${1:-help}" in
+    init)     cmd_init ;;
+    plan)     cmd_plan ;;
+    apply)    cmd_apply ;;
+    destroy)  cmd_destroy ;;
+    ssh)      cmd_ssh ;;
+    status)   cmd_status ;;
+    logs)     cmd_logs ;;
+    restart)  cmd_restart ;;
+    *)
+        echo "Usage: ./deploy.sh <command>"
+        echo ""
+        echo "Commands:"
+        echo "  init      Initialize Terraform"
+        echo "  plan      Create Terraform plan"
+        echo "  apply     Apply Terraform plan (deploy infrastructure)"
+        echo "  destroy   Destroy all infrastructure"
+        echo "  ssh       SSH into the EC2 instance"
+        echo "  status    Check deployment status"
+        echo "  logs      View container logs"
+        echo "  restart   Restart LiteLLM containers"
+        ;;
 esac

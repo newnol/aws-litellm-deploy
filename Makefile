@@ -1,36 +1,34 @@
-.PHONY: help init plan apply deploy status logs ssh destroy fmt validate
+# =============================================================================
+# LiteLLM Proxy - Makefile
+# =============================================================================
+# Convenience targets for deployment and management.
+# =============================================================================
 
-ENV ?= prod
+.PHONY: help init plan apply destroy ssh status logs restart
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z\_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 init: ## Initialize Terraform
-	./deploy.sh $(ENV) init
+	./deploy.sh init
 
-plan: ## Plan changes
-	./deploy.sh $(ENV) plan
+plan: ## Create Terraform plan
+	./deploy.sh plan
 
-apply: ## Apply saved plan
-	./deploy.sh $(ENV) apply
+apply: ## Deploy infrastructure
+	./deploy.sh apply
 
-deploy: ## Full deploy (init → plan → apply)
-	./deploy.sh $(ENV) deploy
+destroy: ## Destroy infrastructure
+	./deploy.sh destroy
 
-status: ## Show deployment status
-	./deploy.sh $(ENV) status
+ssh: ## SSH into EC2
+	./deploy.sh ssh
 
-logs: ## SSH and view Docker logs
-	./deploy.sh $(ENV) logs
+status: ## Check status
+	./deploy.sh status
 
-ssh: ## SSH into EC2 instance
-	./deploy.sh $(ENV) ssh
+logs: ## View logs
+	./deploy.sh logs
 
-destroy: ## Destroy all resources
-	./deploy.sh $(ENV) destroy
-
-fmt: ## Format Terraform files
-	./deploy.sh fmt
-
-validate: ## Validate Terraform config
-	./deploy.sh $(ENV) validate
+restart: ## Restart services
+	./deploy.sh restart

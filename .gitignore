@@ -5,27 +5,20 @@
 tfplan
 .terraform/
 .terraform.lock.hcl
-terraform.tfvars
-crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
 
 # Environment
-.env
-.env.*
+terraform.tfvars
+!terraform.tfvars.example
+
+# SSH keys
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Docker
-.docker/

@@ -1,51 +1,53 @@
-################################################################################
-# Security Groups — EC2 (SSH + HTTP + HTTPS)
-################################################################################
+# =============================================================================
+# Security Groups Module
+# =============================================================================
 
 resource "aws_security_group" "ec2" {
-  name        = "${var.project_name}-${var.environment}-ec2-sg"
-  description = "Security group for EC2 instance"
+  name_prefix = "${var.project_name}-ec2-"
   vpc_id      = var.vpc_id
+  description = "Security group for LiteLLM EC2 instance"
 
-  # SSH
+  # HTTP (Nginx)
   ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # HTTP
-  ingress {
-    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP access"
   }
 
-  # HTTPS
+  # LiteLLM direct access
   ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
+    from_port   = 4000
+    to_port     = 4000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "LiteLLM proxy access"
   }
 
-  # Outbound (all)
+  # SSH
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
+    description = "SSH access"
+  }
+
+  # All outbound
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "All outbound"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = {
-    Name        = "${var.project_name}-${var.environment}-ec2-sg"
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "terraform"
+    Name = "${var.project_name}-ec2-sg"
   }
 }
