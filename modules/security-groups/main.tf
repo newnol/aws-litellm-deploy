@@ -1,5 +1,5 @@
 ################################################################################
-# Security Groups — EC2 only (SSH + LiteLLM)
+# Security Groups — EC2 (SSH + HTTP + HTTPS)
 ################################################################################
 
 resource "aws_security_group" "ec2" {
@@ -16,11 +16,20 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # LiteLLM API
+  # HTTP
   ingress {
-    description = "LiteLLM API"
-    from_port   = 4000
-    to_port     = 4000
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTPS
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
